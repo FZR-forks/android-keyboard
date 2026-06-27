@@ -97,7 +97,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
     private static PointerTrackerParams sParams;
     private static final int sPointerStep = (int)(16.0 * Resources.getSystem().getDisplayMetrics().density);
     private static final int sPointerBigStep = (int)(32.0 * Resources.getSystem().getDisplayMetrics().density);
-    private static final int sSpacebarLanguageSwipeStep = sPointerBigStep;
+    private static final int sSpacebarLanguageSwipeStep = (int)(64.0 * Resources.getSystem().getDisplayMetrics().density);
 
     private static GestureStrokeRecognitionParams sGestureStrokeRecognitionParams;
     private static GestureStrokeDrawingParams sGestureStrokeDrawingParams;

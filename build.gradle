@@ -172,6 +172,11 @@ android {
         testApplicationId 'org.futo.inputmethod.latin.tests'
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = false
+
+        if (project.hasProperty('abiFilters')) {
+            ndk.abiFilters = project.abiFilters.split(',').collect { it.trim() }
+            project.logger.lifecycle("ABI filters: ${ndk.abiFilters}")
+        }
     }
 
     bundle {
