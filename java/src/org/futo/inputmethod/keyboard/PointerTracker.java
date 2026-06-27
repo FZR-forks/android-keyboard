@@ -97,10 +97,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
     private static PointerTrackerParams sParams;
     private static final int sPointerStep = (int)(16.0 * Resources.getSystem().getDisplayMetrics().density);
     private static final int sPointerBigStep = (int)(32.0 * Resources.getSystem().getDisplayMetrics().density);
-    private static final int sPointerHugeStep = Integer.min(
-            (int)(128.0 * Resources.getSystem().getDisplayMetrics().density),
-            Resources.getSystem().getDisplayMetrics().widthPixels * 3 / 2
-    );
+    private static final int sSpacebarLanguageSwipeStep = sPointerBigStep;
 
     private static GestureStrokeRecognitionParams sGestureStrokeRecognitionParams;
     private static GestureStrokeDrawingParams sGestureStrokeDrawingParams;
@@ -974,18 +971,22 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
                         || (!mSpacebarLongPressed && settingsValues.mSpacebarSwipeMode != Settings.SPACEBAR_MODE_OFF);
 
             if(allowedBySettings) {
+                final boolean isImmediateLanguageSwipe = settingsValues.mSpacebarSwipeMode == Settings.SPACEBAR_MODE_LANGUAGE
+                        && !mSpacebarLongPressed;
                 int pointerStep = sPointerStep;
-                if (settingsValues.mSpacebarSwipeMode == Settings.SPACEBAR_MODE_LANGUAGE && !mSpacebarLongPressed) {
-                    pointerStep = sPointerHugeStep;
+                if (isImmediateLanguageSwipe) {
+                    pointerStep = sSpacebarLanguageSwipeStep;
                 }
 
                 int steps = (x - mStartX) / pointerStep;
-                final int swipeIgnoreTime = settingsValues.mKeyLongpressTimeout / MULTIPLIER_FOR_LONG_PRESS_TIMEOUT_IN_SLIDING_INPUT;
+                final int swipeIgnoreTime = isImmediateLanguageSwipe
+                        ? 0
+                        : settingsValues.mKeyLongpressTimeout / MULTIPLIER_FOR_LONG_PRESS_TIMEOUT_IN_SLIDING_INPUT;
                 if (steps != 0 && mStartTime + swipeIgnoreTime < System.currentTimeMillis()) {
                     mCursorMoved = true;
                     mStartX += steps * pointerStep;
 
-                    if (settingsValues.mSpacebarSwipeMode == Settings.SPACEBAR_MODE_LANGUAGE && !mSpacebarLongPressed) {
+                    if (isImmediateLanguageSwipe) {
                         sListener.onSwipeLanguage(steps);
                     } else {
                         sListener.onMovePointer(steps);
