@@ -982,7 +982,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
                 final int swipeIgnoreTime = isImmediateLanguageSwipe
                         ? 0
                         : settingsValues.mKeyLongpressTimeout / MULTIPLIER_FOR_LONG_PRESS_TIMEOUT_IN_SLIDING_INPUT;
-                if (steps != 0 && mStartTime + swipeIgnoreTime < System.currentTimeMillis()) {
+                if (steps != 0 && eventTime - mDownTime >= swipeIgnoreTime) {
                     mCursorMoved = true;
                     mStartX += steps * pointerStep;
 
