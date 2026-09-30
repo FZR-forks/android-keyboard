@@ -1,0 +1,52 @@
+name: Build custom keyboard APK
+
+on:
+  push:
+    branches:
+      - my-version
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out source and submodules
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build packages
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;28.2.13676358" "cmake;3.22.1"
+
+      - name: Set version metadata
+        run: |
+          echo "VERSION_CODE=$(git rev-list --first-parent --count HEAD)" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=custom-$(git rev-parse --short=8 HEAD)" >> "$GITHUB_ENV"
+          echo "BRANCH_NAME=my-version" >> "$GITHUB_ENV"
+
+      - name: Build installable APK
+        run: ./gradlew assembleStableDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: futo-keyboard-my-version-${{ github.sha }}
+          path: build/outputs/apk/stable/debug/latinime-stable-debug.apk
+          if-no-files-found: error
+          retention-days: 14
