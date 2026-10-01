@@ -1,0 +1,79 @@
+name: Build and release custom keyboard APK
+
+on:
+  push:
+    branches:
+      - my-version
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source and submodules
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android build packages
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;28.2.13676358" "cmake;3.22.1"
+
+      - name: Set version metadata
+        shell: bash
+        run: |
+          VERSION_CODE="$(($(date -u +%s) / 60))"
+          VERSION_NAME="custom-$(date -u +%Y.%m.%d)-$(git rev-parse --short=8 HEAD)"
+          TAG="custom-$(date -u +%Y.%m.%d)-$(git rev-parse --short=8 HEAD)"
+          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "BRANCH_NAME=my-version" >> "$GITHUB_ENV"
+
+      - name: Build signed stable APK
+        run: ./gradlew assembleStableRelease --stacktrace
+
+      - name: Prepare release APK
+        shell: bash
+        run: |
+          APK="$(find build/outputs/apk/stable/release -maxdepth 1 -name '*.apk' -print -quit)"
+          test -n "$APK"
+          cp "$APK" "futo-keyboard-${VERSION_NAME}.apk"
+          echo "RELEASE_APK=futo-keyboard-${VERSION_NAME}.apk" >> "$GITHUB_ENV"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: futo-keyboard-${{ env.VERSION_NAME }}
+          path: ${{ env.RELEASE_APK }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "$TAG" "$RELEASE_APK" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "FUTO Keyboard Custom $VERSION_NAME" \
+            --notes "Custom FUTO Keyboard build based on current upstream, preserving same-layout multilingual grouping, hardware/tablet toolbar behavior, and configurable spacebar language-swipe sensitivity while keeping upstream's newer swipe preview, haptics, vertical-swipe support, and release-to-switch behavior."

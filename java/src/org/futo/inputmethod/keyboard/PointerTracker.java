@@ -19,6 +19,7 @@ package org.futo.inputmethod.keyboard;
 import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.os.SystemClock;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.MotionEvent;
 
@@ -97,11 +98,6 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
     private static PointerTrackerParams sParams;
     private static final int sPointerStep = (int)(16.0 * Resources.getSystem().getDisplayMetrics().density);
     private static final int sPointerBigStep = (int)(32.0 * Resources.getSystem().getDisplayMetrics().density);
-    private static final int sPointerHugeStep = Integer.min(
-            (int)(64.0 * Resources.getSystem().getDisplayMetrics().density),
-            Resources.getSystem().getDisplayMetrics().widthPixels * 3 / 2
-    );
-
     private static GestureStrokeRecognitionParams sGestureStrokeRecognitionParams;
     private static GestureStrokeDrawingParams sGestureStrokeDrawingParams;
     private static boolean sNeedsPhantomSuddenMoveEventHack;
@@ -978,8 +974,18 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
                 int pointerStep = sPointerStep;
                 boolean useY = false;
                 if (settingsValues.mSpacebarSwipeMode == Settings.SPACEBAR_MODE_LANGUAGE && !mSpacebarLongPressed) {
-                    pointerStep = sPointerHugeStep;
+                    // Use the configurable distance on the gesture's active axis. The
+                    // screen-size clamp prevents an unreachable threshold on small screens.
+                    final DisplayMetrics displayMetrics =
+                            Resources.getSystem().getDisplayMetrics();
                     useY = oldKey.getUseVerticalSwipe();
+                    final int axisSize = useY
+                            ? displayMetrics.heightPixels
+                            : displayMetrics.widthPixels;
+                    pointerStep = Math.max(1, Math.min(
+                            Math.round(settingsValues.mSpacebarLanguageSwipeStepDp * displayMetrics.density),
+                            axisSize * 3 / 2
+                    ));
                 }
 
 
