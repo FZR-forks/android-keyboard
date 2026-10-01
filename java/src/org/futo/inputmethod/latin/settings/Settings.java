@@ -137,11 +137,11 @@ public final class Settings implements SharedPreferences.OnSharedPreferenceChang
     public static final int SPACEBAR_MODE_CURSOR = 1;
     public static final int SPACEBAR_MODE_LANGUAGE = 2;
 
-    // Swipe distance (in dp) required to reach the language-switch threshold. The 64dp default
-    // follows the newer upstream gesture while the setting allows users to tune its sensitivity.
+    // Swipe distance (in dp) required to reach the language-switch threshold. Keep the custom
+    // build more sensitive than upstream by default while retaining the adjustable setting.
     public static final String PREF_SPACEBAR_LANGUAGE_SWIPE_SENSITIVITY =
             "pref_spacebar_language_swipe_sensitivity";
-    public static final int DEFAULT_SPACEBAR_LANGUAGE_SWIPE_SENSITIVITY = 64;
+    public static final int DEFAULT_SPACEBAR_LANGUAGE_SWIPE_SENSITIVITY = 32;
 
     public static final String PREF_BACKSPACE_MODE_HOLD = "pref_backspace_mode_hold";
     public static final String PREF_BACKSPACE_MODE = "pref_backspace_mode";
