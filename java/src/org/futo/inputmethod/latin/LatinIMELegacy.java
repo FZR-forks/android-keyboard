@@ -183,7 +183,9 @@ public class LatinIMELegacy implements KeyboardActionListener,
 
         final IntentFilter dictDumpFilter = new IntentFilter();
         dictDumpFilter.addAction(DictionaryDumpBroadcastReceiver.DICTIONARY_DUMP_INTENT_ACTION);
-        ContextCompat.registerReceiver(mInputMethodService, mDictionaryDumpBroadcastReceiver, dictDumpFilter, ContextCompat.RECEIVER_NOT_EXPORTED);
+        ContextCompat.registerReceiver(mInputMethodService, mDictionaryDumpBroadcastReceiver,
+                dictDumpFilter, BuildConfig.APPLICATION_ID + ".PRIVATE_SIGNER_RECEIVER_PERMISSION",
+                null, ContextCompat.RECEIVER_NOT_EXPORTED);
 
         StatsUtils.onCreate(mSettings.getCurrent(), mRichImm);
     }

@@ -35,6 +35,19 @@
 
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove"/>
 
+    <!-- The AndroidX permission in old releases belongs to the compromised signer.
+         Give private receivers a new permission so rotation needs no old-key privileges. -->
+    <permission
+        android:name="${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+        tools:node="remove" />
+    <uses-permission
+        android:name="${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+        tools:node="remove" />
+    <permission
+        android:name="${applicationId}.PRIVATE_SIGNER_RECEIVER_PERMISSION"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="${applicationId}.PRIVATE_SIGNER_RECEIVER_PERMISSION" />
+
     <application android:label="@string/english_ime_name"
          android:icon="@mipmap/ic_launcher"
          android:roundIcon="@mipmap/ic_launcher_round"

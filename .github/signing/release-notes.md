@@ -5,6 +5,7 @@ This custom build preserves the fork's multilingual layout grouping, tablet tool
 - Release APKs now use a private RSA-4096 key stored in GitHub Actions Secrets.
 - The publicly shared keystore has been removed from the current source tree. It was already public and remains compromised; deleting it cannot revoke copies or Git history.
 - The APK carries a verified signing-certificate rotation proof. Android 9+ can update the previous shared-key release in place and retain its app data. Rollback, shared UID, signature permissions, and authenticator access are disabled for the old key.
+- The keyboard's private broadcast permission has a new name, avoiding the old certificate's permission ownership conflict without restoring its privileges.
 - The release pipeline checks migration on Android 9 and Android 15, including data retention and rejection of an update signed with the exposed key.
 - **These custom stable releases require Android 9 or newer.** We do not keep signing older Android builds with the compromised key.
 
