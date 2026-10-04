@@ -1,0 +1,236 @@
+name: Build and release custom keyboard APK
+
+on:
+  push:
+    branches: [my-version]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keyboard-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/my-version'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      version_name: ${{ steps.version.outputs.version_name }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Check out source and submodules
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android build packages
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;28.2.13676358" "cmake;3.22.1"
+
+      - name: Set version metadata
+        id: version
+        shell: bash
+        run: |
+          VERSION_CODE="$(($(date -u +%s) / 60))"
+          VERSION_NAME="custom-$(date -u +%Y.%m.%d)-$(git rev-parse --short=8 HEAD)"
+          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
+          echo "BRANCH_NAME=my-version" >> "$GITHUB_ENV"
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "tag=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Build unsigned stable APK
+        run: ./gradlew assembleStableRelease --stacktrace
+
+      - name: Prepare unsigned APK
+        shell: bash
+        run: |
+          mapfile -t APKS < <(find build/outputs/apk/stable/release -maxdepth 1 -name '*-unsigned.apk')
+          test "${#APKS[@]}" -eq 1
+          cp "${APKS[0]}" unsigned.apk
+
+      - name: Upload unsigned build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unsigned-keyboard
+          path: unsigned.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  sign:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out public signing metadata
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: build-tools;35.0.0
+
+      - name: Download unsigned build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: unsigned-keyboard
+
+      - name: Sign with private key and verify rotation
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          VERSION_NAME: ${{ needs.build.outputs.version_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          : "${ANDROID_KEYSTORE_BASE64:?Missing keystore Secret}"
+          : "${ANDROID_KEYSTORE_PASSWORD:?Missing keystore password Secret}"
+          : "${ANDROID_KEY_ALIAS:?Missing key alias Secret}"
+          : "${ANDROID_KEY_PASSWORD:?Missing key password Secret}"
+          KEYSTORE="$RUNNER_TEMP/keyboard-release.jks"
+          trap 'rm -f "$KEYSTORE"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          mkdir -p release
+          APK="release/futo-keyboard-${VERSION_NAME}.apk"
+          "$APKSIGNER" sign --ks "$KEYSTORE" \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
+            --lineage .github/signing/release.lineage --rotation-min-sdk-version 28 \
+            --v1-signing-enabled false --v2-signing-enabled false \
+            --v3-signing-enabled true --v4-signing-enabled false \
+            --out "$APK" unsigned.apk
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee release/signature-verification.txt
+          EXPECTED="$(openssl x509 -in .github/signing/release-cert.pem -outform DER | sha256sum | cut -d' ' -f1)"
+          grep -F "Signer #1 certificate SHA-256 digest: $EXPECTED" release/signature-verification.txt
+          "$APKSIGNER" lineage --in .github/signing/release.lineage --print-certs -v > release/signing-lineage.txt
+          cp .github/signing/release-cert.pem release/
+          (cd release && sha256sum *.apk > SHA256SUMS)
+
+      - name: Upload verified signed APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: signed-keyboard
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
+
+  migration-test:
+    needs: sign
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [28, 35]
+    steps:
+      - name: Check out migration test
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Download signed APK
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: signed-keyboard
+          path: release
+
+      - name: Set up Java
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: platforms;android-35 build-tools;35.0.0
+
+      - name: Prepare previous release and old-key test APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release download custom-2026.10.01-71e12168 --repo "$GITHUB_REPOSITORY" --pattern '*.apk' --dir legacy
+          gh api "repos/$GITHUB_REPOSITORY/contents/java/shared.keystore?ref=71e12168ce4b6102e62dde479c3cc925ea09945c" --jq .content | base64 --decode > "$RUNNER_TEMP/exposed-old.keystore"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" link \
+            --manifest .github/signing/old-key-update-manifest.xml \
+            -I "$ANDROID_HOME/platforms/android-35/android.jar" \
+            -o "$RUNNER_TEMP/old-key-update-unsigned.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+            --ks "$RUNNER_TEMP/exposed-old.keystore" --ks-key-alias androiddebugkey \
+            --ks-pass pass:android --key-pass pass:android \
+            --out old-key-update.apk "$RUNNER_TEMP/old-key-update-unsigned.apk"
+          rm -f "$RUNNER_TEMP/exposed-old.keystore"
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Verify data-preserving update and reject old key
+        uses: ReactiveCircus/android-emulator-runner@4c44018e59b437e86cdfc41da381398f93ed8808 # v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: default
+          arch: x86_64
+          disable-animations: true
+          script: bash .github/scripts/test-signing-migration.sh
+
+  publish:
+    needs: [build, sign, migration-test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Check out release notes
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Download verified release files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: signed-keyboard
+          path: release
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build.outputs.tag }}
+          VERSION_NAME: ${{ needs.build.outputs.version_name }}
+        shell: bash
+        run: |
+          gh release create "$TAG" release/* \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "FUTO Keyboard Custom $VERSION_NAME" \
+            --notes-file .github/signing/release-notes.md --latest

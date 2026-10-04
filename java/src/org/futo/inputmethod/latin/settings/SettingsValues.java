@@ -35,6 +35,7 @@ import org.futo.inputmethod.latin.uix.actions.RegistryKt;
 import org.futo.inputmethod.latin.utils.AsyncResultHolder;
 import org.futo.inputmethod.latin.utils.ResourceUtils;
 import org.futo.inputmethod.latin.utils.ScriptUtils2;
+import org.futo.inputmethod.latin.utils.SubtypeLocaleUtils;
 import org.futo.inputmethod.latin.utils.TargetPackageInfoGetterTask;
 
 import java.util.Arrays;
@@ -108,6 +109,7 @@ public class SettingsValues {
     public final boolean mBackspaceUndoesAutocorrect;
     public final int mSpacebarSwipeMode;
     public final int mSpacebarHoldMode;
+    public final int mSpacebarLanguageSwipeStepDp;
     public final int mBackspaceMode;
     public final int mBackspaceModeHold;
     public final int mNumberRowMode;
@@ -209,6 +211,8 @@ public class SettingsValues {
                 legacySpacebarMode == Settings.SPACEBAR_MODE_SWIPE_LANGUAGE_LEGACY ? Settings.SPACEBAR_MODE_LANGUAGE : Settings.SPACEBAR_MODE_CURSOR);
         mSpacebarHoldMode = prefs.getInt(Settings.PREF_SPACEBAR_HOLD_MODE,
                 legacySpacebarMode == Settings.SPACEBAR_MODE_SWIPE_CURSOR_LEGACY ? Settings.SPACEBAR_MODE_LANGUAGE : Settings.SPACEBAR_MODE_CURSOR);
+        mSpacebarLanguageSwipeStepDp = prefs.getInt(Settings.PREF_SPACEBAR_LANGUAGE_SWIPE_SENSITIVITY,
+                Settings.DEFAULT_SPACEBAR_LANGUAGE_SWIPE_SENSITIVITY);
 
         mBackspaceMode = prefs.getInt(Settings.PREF_BACKSPACE_MODE, Settings.BACKSPACE_MODE_CHARACTERS);
         mBackspaceModeHold = prefs.getInt(Settings.PREF_BACKSPACE_MODE_HOLD, mBackspaceMode);
@@ -271,7 +275,10 @@ public class SettingsValues {
                 prefs, DebugSettings.PREF_KEY_PREVIEW_DISMISS_END_Y_SCALE,
                 defaultKeyPreviewDismissEndScale);
 
-        mMultilingualLocales = Subtypes.INSTANCE.getMultilingualBucket(context, mLocale);
+        final String currentKeyboardLayoutSet = SubtypeLocaleUtils.getKeyboardLayoutSetName(
+                Subtypes.INSTANCE.getActiveSubtype(context));
+        mMultilingualLocales = Subtypes.INSTANCE.getMultilingualBucket(
+                context, mLocale, currentKeyboardLayoutSet);
 
         mDisplayOrientation = res.getConfiguration().orientation;
         mAppWorkarounds = new AsyncResultHolder<>("AppWorkarounds");
@@ -580,6 +587,8 @@ public class SettingsValues {
         sb.append("" + mBackspaceUndoesAutocorrect);
         sb.append("\n   mBackspaceMode = ");
         sb.append("" + mBackspaceMode);
+        sb.append("\n   mSpacebarLanguageSwipeStepDp = ");
+        sb.append("" + mSpacebarLanguageSwipeStepDp);
         sb.append("\n   mNumberRowMode = ");
         sb.append("" + mNumberRowMode);
         sb.append("\n   mAltSpacesMode = ");
