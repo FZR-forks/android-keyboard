@@ -162,11 +162,6 @@ jobs:
           name: signed-keyboard
           path: release
 
-      - name: Download unsigned APK for old-key rejection test
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: unsigned-keyboard
-
       - name: Set up Java
         uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
@@ -176,7 +171,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
         with:
-          packages: build-tools;35.0.0
+          packages: platforms;android-35 build-tools;35.0.0
 
       - name: Prepare previous release and old-key test APK
         env:
@@ -185,9 +180,14 @@ jobs:
         run: |
           gh release download custom-2026.10.01-71e12168 --repo "$GITHUB_REPOSITORY" --pattern '*.apk' --dir legacy
           gh api "repos/$GITHUB_REPOSITORY/contents/java/shared.keystore?ref=71e12168ce4b6102e62dde479c3cc925ea09945c" --jq .content | base64 --decode > "$RUNNER_TEMP/exposed-old.keystore"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" link \
+            --manifest .github/signing/old-key-update-manifest.xml \
+            -I "$ANDROID_HOME/platforms/android-35/android.jar" \
+            -o "$RUNNER_TEMP/old-key-update-unsigned.apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
             --ks "$RUNNER_TEMP/exposed-old.keystore" --ks-key-alias androiddebugkey \
-            --ks-pass pass:android --key-pass pass:android --out old-key-update.apk unsigned.apk
+            --ks-pass pass:android --key-pass pass:android \
+            --out old-key-update.apk "$RUNNER_TEMP/old-key-update-unsigned.apk"
           rm -f "$RUNNER_TEMP/exposed-old.keystore"
 
       - name: Enable KVM

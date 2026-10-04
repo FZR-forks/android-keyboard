@@ -11,6 +11,9 @@ test "${#NEW_APK[@]}" -eq 1
 
 adb root
 adb wait-for-device
+# Prove the adversarial APK is valid on a fresh installation first.
+adb install old-key-update.apk
+adb uninstall "$PACKAGE"
 adb install "${OLD_APK[0]}"
 OLD_UID="$(adb shell stat -c %u "$DATA" | tr -d '\r')"
 adb shell mkdir -p "$DATA/shared_prefs"
@@ -40,7 +43,7 @@ if grep -F "Process: $PACKAGE" /tmp/keyboard-startup-crash.txt; then
   exit 1
 fi
 
-# Same package and new versionCode, but signed with the exposed old key.
+# Higher versionCode, no duplicate permissions, but signed with the exposed key.
 # This must fail even though the new APK carries a migration lineage.
 if adb install -r old-key-update.apk > /tmp/old-key-install.txt 2>&1; then
   cat /tmp/old-key-install.txt
