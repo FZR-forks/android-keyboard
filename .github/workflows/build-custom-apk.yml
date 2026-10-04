@@ -124,7 +124,7 @@ jobs:
             --ks-key-alias "$ANDROID_KEY_ALIAS" \
             --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
             --lineage .github/signing/release.lineage --rotation-min-sdk-version 28 \
-            --v1-signing-enabled false --v2-signing-enabled true \
+            --v1-signing-enabled false --v2-signing-enabled false \
             --v3-signing-enabled true --v4-signing-enabled false \
             --out "$APK" unsigned.apk
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee release/signature-verification.txt
