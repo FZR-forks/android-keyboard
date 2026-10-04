@@ -8,6 +8,10 @@ local.properties
 crashreporting.properties
 keystore.properties
 key.jks
+*.jks
+*.keystore
+*.p12
+*.pk8
 java/res/raw/mozc.data
 .cxx
 java/src/org/futo/inputmethod/keyboard/internal/KeyboardTextsTable.java

@@ -213,14 +213,10 @@ android {
         }
     }
 
-    signingConfigs {
-        debug {
-            storeFile file("java/shared.keystore")
-        }
-    }
-
     final def keystorePropertiesFile = rootProject.file("keystore.properties")
-    def releaseSigning = signingConfigs.debug
+    // Release builds are unsigned unless a private local keystore is explicitly provided.
+    // GitHub Actions signs the unsigned APK in a separate job with repository Secrets.
+    def releaseSigning = null
     if (keystorePropertiesFile.exists()) {
         final def keystoreProperties = new Properties()
         keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
@@ -231,7 +227,7 @@ android {
             storePassword keystoreProperties['storePassword']
         }
     } else {
-        project.logger.lifecycle('keystore.properties not found, APK may not be signed')
+        project.logger.lifecycle('keystore.properties not found; release APK will be unsigned')
     }
 
 
@@ -298,6 +294,9 @@ android {
 
         stable {
             dimension "buildType"
+            // APK v3 rotation requires Android 9+. Older Android versions would require
+            // continuing to sign with the compromised key to preserve update compatibility.
+            minSdk 28
             buildConfigField "boolean", "IS_PLAYSTORE_BUILD", "false"
             buildConfigField "boolean", "UPDATE_CHECKING", "true"
             buildConfigField "boolean", "UPDATE_CHECKING_NETWORK", "false"
