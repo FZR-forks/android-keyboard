@@ -1,5 +1,16 @@
 This custom build preserves the fork's multilingual layout grouping, tablet toolbar behavior, and configurable spacebar swipe sensitivity.
 
+## Upstream changes
+
+Includes all upstream `master` changes through `7d61ab4132cfcbb7aa713190d934f0125dc38b03` (November 2, 2026), with the fork's customizations preserved.
+
+- Updated the swipe context language model.
+- Fixed apostrophe handling in swipe context and phantom spacing after a colon.
+- Improved English “i” autocorrection with dictionaries missing that shortcut.
+- Fixed fuzzy Pinyin rules overriding the configured spelling rules.
+- Added upstream ATL compatibility and developer diagnostics, and handled missing screenshot volumes.
+- Kept multilingual layout grouping, hardware-keyboard toolbar behavior, configurable spacebar swipe sensitivity (32 dp default), and private release signing.
+
 ## Private release signing
 
 - Release APKs now use a private RSA-4096 key stored in GitHub Actions Secrets.
