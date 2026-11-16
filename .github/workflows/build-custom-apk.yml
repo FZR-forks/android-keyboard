@@ -26,6 +26,7 @@ jobs:
         with:
           fetch-depth: 0
           submodules: recursive
+          lfs: true
           persist-credentials: false
 
       - name: Set up Java
@@ -64,6 +65,9 @@ jobs:
           mapfile -t APKS < <(find build/outputs/apk/stable/release -maxdepth 1 -name '*-unsigned.apk')
           test "${#APKS[@]}" -eq 1
           cp "${APKS[0]}" unsigned.apk
+
+      - name: Verify packaged swipe models
+        run: python3 .github/scripts/verify-swipe-models.py unsigned.apk
 
       - name: Upload unsigned build
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
