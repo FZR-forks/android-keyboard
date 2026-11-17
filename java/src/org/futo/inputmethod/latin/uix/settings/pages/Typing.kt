@@ -86,6 +86,7 @@ import org.futo.inputmethod.accessibility.AccessibilityUtils
 import org.futo.inputmethod.engine.IMESettingsMenu
 import org.futo.inputmethod.latin.HideKeyboardWhenHardKeyboardConnected
 import org.futo.inputmethod.latin.R
+import org.futo.inputmethod.latin.ShowToolbarWhenHardKeyboardConnected
 import org.futo.inputmethod.latin.settings.LongPressKey
 import org.futo.inputmethod.latin.settings.LongPressKeyLayoutSetting
 import org.futo.inputmethod.latin.settings.Settings
@@ -636,6 +637,24 @@ val LongPressMenu = UserSettingsMenu(
             )
         },
 
+        UserSetting(
+            name = R.string.morekey_settings_spacebar_language_swipe_distance,
+            subtitle = R.string.morekey_settings_spacebar_language_swipe_distance_subtitle,
+        ) {
+            val resources = LocalResources.current
+            SettingSliderSharedPrefsInt(
+                title = stringResource(R.string.morekey_settings_spacebar_language_swipe_distance),
+                subtitle = stringResource(R.string.morekey_settings_spacebar_language_swipe_distance_subtitle),
+                key = Settings.PREF_SPACEBAR_LANGUAGE_SWIPE_SENSITIVITY,
+                default = Settings.DEFAULT_SPACEBAR_LANGUAGE_SWIPE_SENSITIVITY,
+                range = 24.0f..160.0f,
+                hardRange = 24.0f..160.0f,
+                transform = { it.roundToInt() },
+                indicator = { resources.getString(R.string.abbreviation_unit_dp, "$it") },
+                steps = 16
+            )
+        },
+
         // TODO: Might not work well for showing up in search
         UserSetting(name = R.string.morekey_settings_layout) {
             val context = LocalContext.current
@@ -848,6 +867,12 @@ val KeyboardSettingsMenu = UserSettingsMenu(
         userSettingToggleDataStore(
             title = R.string.keyboard_settings_hide_when_hardware_keyboard_is_connected,
             setting = HideKeyboardWhenHardKeyboardConnected
+        ),
+        userSettingToggleDataStore(
+            title = R.string.keyboard_settings_show_toolbar_when_hardware_keyboard_is_connected,
+            subtitle = R.string.keyboard_settings_show_toolbar_when_hardware_keyboard_is_connected_subtitle,
+            setting = ShowToolbarWhenHardKeyboardConnected,
+            disabled = { !useDataStore(HideKeyboardWhenHardKeyboardConnected).value }
         )
     )
 )

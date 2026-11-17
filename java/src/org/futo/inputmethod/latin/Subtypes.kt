@@ -172,7 +172,7 @@ object Subtypes {
     }
 
     fun hasMultipleEnabledSubtypes(context: Context): Boolean {
-        return context.getSettingBlocking(SubtypesSetting).size > 1
+        return getSwitchableSubtypes(context).size > 1
     }
 
     fun subtypeToString(subtype: InputMethodSubtype): String {
@@ -255,6 +255,119 @@ object Subtypes {
         }
     }
 
+    private fun InputMethodSubtype.layoutSetName(): String =
+        SubtypeLocaleUtils.getKeyboardLayoutSetName(this)
+
+    private fun multilingualBucketLocales(multilingualBucket: Set<String>): Set<Locale> =
+        multilingualBucket.map { getLocale(it) }.toSet()
+
+    private fun multilingualGroupKey(
+        subtype: InputMethodSubtype,
+        enabledSubtypes: List<InputMethodSubtype>,
+        multilingualBucket: Set<Locale>
+    ): String {
+        val locale = getLocale(subtype)
+        val layout = subtype.layoutSetName()
+
+        val localesInSameLayoutBucket = enabledSubtypes.asSequence()
+            .filter { it.layoutSetName() == layout }
+            .map { getLocale(it) }
+            .filter { multilingualBucket.contains(it) }
+            .distinct()
+            .sortedBy { it.toLanguageTag() }
+            .toList()
+
+        return if(multilingualBucket.contains(locale) && localesInSameLayoutBucket.size > 1) {
+            "multilingual:$layout:${localesInSameLayoutBucket.joinToString(";") { it.toLanguageTag() }}"
+        } else {
+            "single:${subtypeToString(subtype)}"
+        }
+    }
+
+    fun getSwitchableSubtypes(context: Context): List<InputMethodSubtype> =
+        getSwitchableSubtypes(
+            context.getSettingBlocking(SubtypesSetting),
+            context.getSettingBlocking(MultilingualBucketSetting)
+        )
+
+    fun getSwitchableSubtypes(
+        subtypeSet: Set<String>,
+        multilingualBucketSet: Set<String>
+    ): List<InputMethodSubtype> {
+        val enabledSubtypes = subtypeSet.map { convertToSubtype(it) }
+        val multilingualBucket = multilingualBucketLocales(multilingualBucketSet)
+        val seen = mutableSetOf<String>()
+
+        return enabledSubtypes.filter { subtype ->
+            seen.add(multilingualGroupKey(subtype, enabledSubtypes, multilingualBucket))
+        }
+    }
+
+    fun isSameSwitchableSubtype(
+        subtypeSet: Set<String>,
+        multilingualBucketSet: Set<String>,
+        firstSubtype: String,
+        secondSubtype: InputMethodSubtype
+    ): Boolean {
+        if(firstSubtype.isEmpty()) return false
+        if(firstSubtype == subtypeToString(secondSubtype)) return true
+
+        val enabledSubtypes = subtypeSet.map { convertToSubtype(it) }
+        val multilingualBucket = multilingualBucketLocales(multilingualBucketSet)
+        val first = convertToSubtype(firstSubtype)
+
+        return multilingualGroupKey(first, enabledSubtypes, multilingualBucket) ==
+                multilingualGroupKey(secondSubtype, enabledSubtypes, multilingualBucket)
+    }
+
+    fun getSwitchableSubtypeDisplayName(
+        context: Context,
+        subtype: InputMethodSubtype
+    ): String {
+        val locale = getLocale(subtype)
+        val locales = listOf(locale) + getMultilingualBucket(context, locale, subtype.layoutSetName())
+
+        return locales.distinct().joinToString(" / ") {
+            getLocaleDisplayName(it, it)
+        }
+    }
+
+    private fun indexOfCurrentSwitchableSubtype(
+        context: Context,
+        switchableSubtypes: List<InputMethodSubtype>
+    ): Int {
+        val currentSubtype = context.getSettingBlocking(ActiveSubtype)
+        val directIndex = switchableSubtypes.indexOfFirst {
+            subtypeToString(it) == currentSubtype
+        }
+        if (directIndex != -1) return directIndex
+
+        val enabledSubtypes = context.getSettingBlocking(SubtypesSetting)
+        val multilingualBucket = context.getSettingBlocking(MultilingualBucketSetting)
+        return switchableSubtypes.indexOfFirst {
+            isSameSwitchableSubtype(
+                enabledSubtypes,
+                multilingualBucket,
+                currentSubtype,
+                it
+            )
+        }
+    }
+
+    private fun getSwitchableSubtypeSpacebarLabel(
+        context: Context,
+        subtype: InputMethodSubtype
+    ): String {
+        val locale = getLocale(subtype)
+        val locales = (listOf(locale) + getMultilingualBucket(context, locale, subtype.layoutSetName()))
+            .distinct()
+        return if (locales.size > 1) {
+            locales.joinToString("/") { it.language.uppercase(Locale.ROOT) }
+        } else {
+            getLanguageOnSpaceBar(locale)
+        }
+    }
+
     fun getDirectBootInitialLayouts(context: Context): Set<String> {
         val layouts = mutableSetOf("en_US:")
 
@@ -279,29 +392,23 @@ object Subtypes {
     }
 
     fun getSurroundingLanguages(context: Context): Pair<String, String>? {
-        val enabledSubtypes = context.getSettingBlocking(SubtypesSetting).toList()
-        val currentSubtype = context.getSettingBlocking(ActiveSubtype)
+        val switchableSubtypes = getSwitchableSubtypes(context)
+        if (switchableSubtypes.size <= 1) return null
 
-        if(enabledSubtypes.isEmpty()) return null
-
-        if(enabledSubtypes.size == 1 && currentSubtype == enabledSubtypes.first()) {
-            return null
-        }
-
-        val index = enabledSubtypes.indexOf(currentSubtype)
+        val index = indexOfCurrentSwitchableSubtype(context, switchableSubtypes)
         val (prevIdx, nextIdx) = if(index == -1) {
             0 to 0
         } else {
-            (index - 1).mod(enabledSubtypes.size) to (index + 1).mod(enabledSubtypes.size)
+            (index - 1).mod(switchableSubtypes.size) to (index + 1).mod(switchableSubtypes.size)
         }
 
-        val prevSubtype = convertToSubtype(enabledSubtypes[prevIdx])
-        val currSubtype = if(index != -1) convertToSubtype(enabledSubtypes[index]) else null
-        val nextSubtype = convertToSubtype(enabledSubtypes[nextIdx])
+        val prevSubtype = switchableSubtypes[prevIdx]
+        val currSubtype = if(index != -1) switchableSubtypes[index] else null
+        val nextSubtype = switchableSubtypes[nextIdx]
 
-        var prevName = getLanguageOnSpaceBar(getLocale(prevSubtype))
-        var currName = currSubtype?.let { getLanguageOnSpaceBar(getLocale(it)) }
-        var nextName = getLanguageOnSpaceBar(getLocale(nextSubtype))
+        var prevName = getSwitchableSubtypeSpacebarLabel(context, prevSubtype)
+        var currName = currSubtype?.let { getSwitchableSubtypeSpacebarLabel(context, it) }
+        var nextName = getSwitchableSubtypeSpacebarLabel(context, nextSubtype)
 
         val canSkipLanguage = getLocale(prevSubtype) == getLocale((nextSubtype)) &&
                 getLocale(prevSubtype) == currSubtype?.let { getLocale(it) }
@@ -368,34 +475,50 @@ object Subtypes {
     ): String? {
         if(direction == 0) return null
 
-        val enabledSubtypes = context.getSettingBlocking(SubtypesSetting).toList()
-        val currentSubtype = context.getSettingBlocking(ActiveSubtype)
+        val switchableSubtypes = getSwitchableSubtypes(context)
 
-        if(enabledSubtypes.isEmpty()) return null
+        if(switchableSubtypes.isEmpty()) return null
 
-        if(enabledSubtypes.size == 1 && currentSubtype == enabledSubtypes.first()) {
+        if(switchableSubtypes.size == 1 && indexOfCurrentSwitchableSubtype(context, switchableSubtypes) == 0) {
             return null
         }
 
-        val index = enabledSubtypes.indexOf(currentSubtype)
+        val index = indexOfCurrentSwitchableSubtype(context, switchableSubtypes)
         val nextIndex = if(index == -1) {
             0
         } else {
-            (index + direction.sign).mod(enabledSubtypes.size)
+            (index + direction.sign).mod(switchableSubtypes.size)
         }
 
-        context.setSettingBlocking(ActiveSubtype.key, enabledSubtypes[nextIndex])
-        return enabledSubtypes[nextIndex]
+        val nextSubtype = subtypeToString(switchableSubtypes[nextIndex])
+        context.setSettingBlocking(ActiveSubtype.key, nextSubtype)
+        return nextSubtype
     }
 
-    fun getMultilingualBucket(context: Context, locale: Locale): List<Locale> {
-        val set = context.getSetting(MultilingualBucketSetting).map {
-            getLocale(it)
-        }
+    @JvmOverloads
+    fun getMultilingualBucket(
+        context: Context,
+        locale: Locale,
+        keyboardLayoutSet: String? = null
+    ): List<Locale> {
+        val set = multilingualBucketLocales(context.getSetting(MultilingualBucketSetting))
         if(!set.contains(locale)) {
             return emptyList()
         } else {
-            return set.filter { it != locale }
+            val enabledLocales = if(keyboardLayoutSet != null) {
+                context.getSettingBlocking(SubtypesSetting)
+                    .asSequence()
+                    .map { convertToSubtype(it) }
+                    .filter { it.layoutSetName() == keyboardLayoutSet }
+                    .map { getLocale(it) }
+                    .filter { set.contains(it) }
+                    .distinct()
+                    .toList()
+            } else {
+                set.toList()
+            }
+
+            return enabledLocales.filter { it != locale }
         }
     }
 }
@@ -415,11 +538,15 @@ fun LanguageSwitcherDialog(
         useDataStoreValue(SubtypesSetting)
     }
 
-    val subtypes = remember(subtypeSet) {
-        Subtypes.layoutsMappedByLanguage(subtypeSet)
+    val multilingualBucketSet = if(inspection) {
+        setOf("en_US", "pt_PT")
+    } else {
+        useDataStoreValue(MultilingualBucketSetting)
     }
 
-    val keys = remember(subtypes) { subtypes.keys.toList().sorted() }
+    val subtypes = remember(subtypeSet, multilingualBucketSet) {
+        Subtypes.getSwitchableSubtypes(subtypeSet, multilingualBucketSet)
+    }
 
     val activeSubtype = if(inspection) {
         "pt_PT:KeyboardLayoutSet=portugues:"
@@ -456,42 +583,45 @@ fun LanguageSwitcherDialog(
             )
 
             LazyColumn(modifier = Modifier.weight(1.0f)) {
-                items(keys) { locale ->
-                    subtypes[locale]!!.forEach { subtype ->
-                        val layoutSetName = subtype.getExtraValueOf(Constants.Subtype.ExtraValue.KEYBOARD_LAYOUT_SET) ?: ""
+                items(subtypes) { subtype ->
+                    val layoutSetName = subtype.getExtraValueOf(Constants.Subtype.ExtraValue.KEYBOARD_LAYOUT_SET) ?: ""
 
-                        val layout = if(inspection) { layoutSetName } else { Subtypes.getLayoutName(context, layoutSetName) }
-                        val title = if(inspection) { subtype.locale } else { Subtypes.getName(subtype) }
+                    val layout = if(inspection) { layoutSetName } else { Subtypes.getLayoutName(context, layoutSetName) }
+                    val title = if(inspection) { subtype.locale } else { Subtypes.getSwitchableSubtypeDisplayName(context, subtype) }
 
-                        val selected = activeSubtype == Subtypes.subtypeToString(subtype)
+                    val selected = Subtypes.isSameSwitchableSubtype(
+                        subtypeSet,
+                        multilingualBucketSet,
+                        activeSubtype,
+                        subtype
+                    )
 
-                        val item = @Composable {
-                            NavigationItem(
-                                title = title,
-                                subtitle = layout.ifBlank { null },
-                                style = NavigationItemStyle.MiscNoArrow,
-                                navigate = {
-                                    context.setSettingBlocking(ActiveSubtype.key, Subtypes.subtypeToString(subtype))
-                                    onDismiss()
-                                },
-                                icon = if(selected) painterResource(R.drawable.check_circle) else painterResource(R.drawable.circle)
-                            )
-                        }
+                    val item = @Composable {
+                        NavigationItem(
+                            title = title,
+                            subtitle = layout.ifBlank { null },
+                            style = NavigationItemStyle.MiscNoArrow,
+                            navigate = {
+                                context.setSettingBlocking(ActiveSubtype.key, Subtypes.subtypeToString(subtype))
+                                onDismiss()
+                            },
+                            icon = if(selected) painterResource(R.drawable.check_circle) else painterResource(R.drawable.circle)
+                        )
+                    }
 
-                        if (selected) {
-                            Surface(color = MaterialTheme.colorScheme.primary) {
-                                CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onPrimary) {
-                                    item()
-                                }
+                    if (selected) {
+                        Surface(color = MaterialTheme.colorScheme.primary) {
+                            CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onPrimary) {
+                                item()
                             }
-                        } else {
-                            item()
                         }
+                    } else {
+                        item()
                     }
                 }
 
                 item {
-                    if(activeIMEs.isNotEmpty() && keys.isNotEmpty()) {
+                    if(activeIMEs.isNotEmpty() && subtypes.isNotEmpty()) {
                         Spacer(Modifier.height(16.dp))
                         HorizontalDivider()
                         Spacer(Modifier.height(16.dp))

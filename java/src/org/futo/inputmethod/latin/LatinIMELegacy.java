@@ -183,7 +183,9 @@ public class LatinIMELegacy implements KeyboardActionListener,
 
         final IntentFilter dictDumpFilter = new IntentFilter();
         dictDumpFilter.addAction(DictionaryDumpBroadcastReceiver.DICTIONARY_DUMP_INTENT_ACTION);
-        ContextCompat.registerReceiver(mInputMethodService, mDictionaryDumpBroadcastReceiver, dictDumpFilter, ContextCompat.RECEIVER_NOT_EXPORTED);
+        ContextCompat.registerReceiver(mInputMethodService, mDictionaryDumpBroadcastReceiver,
+                dictDumpFilter, BuildConfig.APPLICATION_ID + ".PRIVATE_SIGNER_RECEIVER_PERMISSION",
+                null, ContextCompat.RECEIVER_NOT_EXPORTED);
 
         StatsUtils.onCreate(mSettings.getCurrent(), mRichImm);
     }
@@ -570,8 +572,12 @@ public class LatinIMELegacy implements KeyboardActionListener,
             final int layoutHeight = mInputMethodService.isFullscreenMode()
                     ? LayoutParams.WRAP_CONTENT : LayoutParams.MATCH_PARENT;
             final View inputArea = window.findViewById(android.R.id.inputArea);
-            ViewLayoutUtils.updateLayoutHeightOf(inputArea, layoutHeight);
-            ViewLayoutUtils.updateLayoutGravityOf(inputArea, Gravity.BOTTOM);
+
+            if(inputArea != null) {
+                ViewLayoutUtils.updateLayoutHeightOf(inputArea, layoutHeight);
+                ViewLayoutUtils.updateLayoutGravityOf(inputArea, Gravity.BOTTOM);
+            }
+
             ViewLayoutUtils.updateLayoutHeightOf(mComposeInputView, layoutHeight);
         }
     }
