@@ -6,6 +6,14 @@ Check out the [FUTO Keyboard website](https://keyboard.futo.tech/) for downloads
 
 The code is licensed under the [FUTO Source First License 1.1](LICENSE.md).
 
+This fork includes an optional Hex autocorrect backport for English and German.
+Enable it under Languages in the corresponding language card. It uses tap position
+and the previous word for corrections, and follows the main autocorrect switch.
+FUTO supplies completions and handles input without tap coordinates.
+For a shared English and German QWERTY layout, enable multilingual typing and Hex
+autocorrect on both language cards. FUTO's language detection selects the model.
+The [Hex source and data notices](java/assets/hex-typing/licenses/NOTICE.md) cover the bundled backport.
+
 ## Nightly builds
 
 Usually, a build close to the current master is available at [https://dl.keyboard.futo.org/nightly.apk](https://dl.keyboard.futo.org/nightly.apk). Read more about it here: https://docs.keyboard.futo.tech/improvements/nightly

@@ -39,6 +39,7 @@ import org.futo.inputmethod.latin.SuggestionBlacklist
 import org.futo.inputmethod.latin.WordComposer
 import org.futo.inputmethod.latin.common.Constants
 import org.futo.inputmethod.latin.common.InputPointers
+import org.futo.inputmethod.latin.hex.HexAutocorrect
 import org.futo.inputmethod.latin.inputlogic.InputLogic
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.suggestions.SuggestionStripViewAccessor
@@ -112,6 +113,7 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
     )
 
     private val settings = Settings.getInstance()
+    private val hexAutocorrect = HexAutocorrect(context)
 
     private val suggestionBlacklist = SuggestionBlacklist(
         settings,
@@ -464,41 +466,43 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
     var updateSuggestionJob: Job? = null
     var lmUpdateJob: Job? = null
     private suspend fun updateSuggestionsDictionaryInternal(inputStyle: Int, sequenceNumber: Int) {
-        // This method returns null for us if LM is disabled
-        val predictionInputValues = languageModelFacilitator.makePredictionInputValues(inputStyle)
+        val current = settings.current
+        val keyboard = helper.keyboardSwitcher.keyboard ?: return
+        val composer = inputLogic.mWordComposer
+        val hexRequest = if (inputStyle == SuggestedWords.INPUT_STYLE_TYPING && composer.isComposingWord
+            && !composer.isBatchMode && current.mAutoCorrectionEnabledPerUserSettings
+        ) {
+            hexAutocorrect.prepare(composer, keyboard, current, dictionaryFacilitator.mostConfidentLocale)
+        } else null
 
-        var dictResult: SuggestedWords? = null
-        var lmResult: ArrayList<SuggestedWordInfo>? = null
-        if(predictionInputValues != null) {
+        val predictionInputValues = if (hexRequest == null) {
+            languageModelFacilitator.makePredictionInputValues(inputStyle)
+        } else null
+
+        val lmResultHolder = predictionInputValues?.let {
             // This runs asynchronously
-            val lmResultHolder = AsyncResultHolder<ArrayList<SuggestedWordInfo>?>("LMSuggest")
+            val holder = AsyncResultHolder<ArrayList<SuggestedWordInfo>?>("LMSuggest")
             lmUpdateJob?.cancel()
             lmUpdateJob = helper.lifecycleScope.launch(languageModelFacilitator.languageModelScope) {
-                val result = languageModelFacilitator.getLanguageModelSuggestions(predictionInputValues)
-                lmResultHolder.set(result ?: arrayListOf())
+                val result = languageModelFacilitator.getLanguageModelSuggestions(it)
+                holder.set(result ?: arrayListOf())
             }
-
-            // This runs synchronously
-            inputLogic.getSuggestedWords(
-                settings.current,
-                helper.keyboardSwitcher.keyboard ?: return,
-                helper.keyboardShiftMode,
-                inputStyle,
-                sequenceNumber
-            ) { suggestedWords -> dictResult = suggestedWords }
-
-            // Wait for LM to report result
-            lmResult = lmResultHolder.get(null, 350L)
-            if(lmResult == null) languageModelFacilitator.reportTimeout()
-        } else {
-            inputLogic.getSuggestedWords(
-                settings.current,
-                helper.keyboardSwitcher.keyboard ?: return,
-                helper.keyboardShiftMode,
-                inputStyle,
-                sequenceNumber
-            ) { suggestedWords -> dictResult = suggestedWords }
+            holder
         }
+
+        var dictResult: SuggestedWords? = null
+        inputLogic.getSuggestedWords(
+            current, keyboard, helper.keyboardShiftMode, inputStyle, sequenceNumber
+        ) { suggestedWords, ngram ->
+            dictResult = if (hexRequest != null) {
+                hexAutocorrect.apply(
+                    hexRequest, ngram, current.mBlockPotentiallyOffensive, suggestedWords
+                )
+            } else suggestedWords
+        }
+
+        val lmResult = lmResultHolder?.get(null, 350L)
+        if (lmResultHolder != null && lmResult == null) languageModelFacilitator.reportTimeout()
 
         when {
             !lmResult.isNullOrEmpty() && dictResult != null && predictionInputValues != null -> {

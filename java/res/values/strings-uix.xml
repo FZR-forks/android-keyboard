@@ -283,6 +283,7 @@
     <string name="settings_unknown_error_title">Unknown Error</string>
     <string name="settings_unknown_error_subtitle">An unknown error has occurred.</string>
     <string name="settings_try_typing_here">Try typing here…</string>
+    <string name="language_settings_hex_autocorrect">Hex autocorrect</string>
     <string name="settings_external_model_name">Externally imported model</string>
     <string name="settings_check_for_updates_manually">Check for updates manually</string>
     <string name="settings_update_available">Update Available</string>

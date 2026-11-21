@@ -28,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.contentColorFor
@@ -44,6 +45,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
@@ -53,6 +56,7 @@ import org.futo.inputmethod.latin.MultilingualBucketSetting
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.Subtypes
 import org.futo.inputmethod.latin.SubtypesSetting
+import org.futo.inputmethod.latin.hex.hexAutocorrectSetting
 import org.futo.inputmethod.latin.uix.FileKind
 import org.futo.inputmethod.latin.uix.ResourceHelper
 import org.futo.inputmethod.latin.uix.getSetting
@@ -85,7 +89,8 @@ data class LanguageItem(
     val languageName: String,
     val options: LanguageOptions,
     val layouts: List<Pair<InputMethodSubtype, String>>,
-    val inMultilingualBucket: Boolean
+    val inMultilingualBucket: Boolean,
+    val languageCode: String = ""
 )
 
 @Composable
@@ -262,6 +267,24 @@ fun LanguageSurface(
                     selection = item.options.transformerModel
                         ?: stringResource(R.string.language_settings_resource_none)
                 ) { onConfigurableSelected(FileKind.Transformer) }
+
+                hexAutocorrectSetting(item.languageCode)?.let { setting ->
+                    val enabled = useDataStore(setting)
+                    val title = stringResource(R.string.language_settings_hex_autocorrect)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 12.dp, top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(title, style = Typography.Body.Medium, modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = enabled.value,
+                            onCheckedChange = { enabled.setValue(it) },
+                            modifier = Modifier.semantics { contentDescription = title }
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(24.dp))
 
@@ -703,9 +726,8 @@ fun LanguagesScreen(navController: NavHostController = rememberNavController()) 
                         val name = Subtypes.getLayoutName(context, it.layoutSetName)
                         it to name
                     },
-                    inMultilingualBucket = multilingualBucket.value.contains(
-                        localeString
-                    )
+                    inMultilingualBucket = multilingualBucket.value.contains(localeString),
+                    languageCode = locale.language
                 ),
                 onLanguageRemoved = {
                     languageDeleteInfo.value = locale
