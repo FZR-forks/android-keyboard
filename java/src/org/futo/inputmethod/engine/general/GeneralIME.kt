@@ -39,6 +39,8 @@ import org.futo.inputmethod.latin.SuggestionBlacklist
 import org.futo.inputmethod.latin.WordComposer
 import org.futo.inputmethod.latin.common.Constants
 import org.futo.inputmethod.latin.common.InputPointers
+import org.futo.inputmethod.latin.hex.HexAutocorrect
+import org.futo.inputmethod.latin.hex.hexAutocorrectSetting
 import org.futo.inputmethod.latin.inputlogic.InputLogic
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.suggestions.SuggestionStripViewAccessor
@@ -112,6 +114,7 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
     )
 
     private val settings = Settings.getInstance()
+    private val hexAutocorrect = HexAutocorrect(context.assets)
 
     private val suggestionBlacklist = SuggestionBlacklist(
         settings,
@@ -464,41 +467,54 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
     var updateSuggestionJob: Job? = null
     var lmUpdateJob: Job? = null
     private suspend fun updateSuggestionsDictionaryInternal(inputStyle: Int, sequenceNumber: Int) {
-        // This method returns null for us if LM is disabled
-        val predictionInputValues = languageModelFacilitator.makePredictionInputValues(inputStyle)
+        val current = settings.current
+        val keyboard = helper.keyboardSwitcher.keyboard ?: return
+        val composer = inputLogic.mWordComposer
+        val multilingualLocales = if (current.mInputAttributes.mLocaleOverride == null) {
+            current.mMultilingualLocales
+        } else emptyList()
+        val hexDecoder = if (inputStyle == SuggestedWords.INPUT_STYLE_TYPING && composer.isComposingWord
+            && !composer.isBatchMode && current.mAutoCorrectionEnabledPerUserSettings
+        ) {
+            val detected = dictionaryFacilitator.mostConfidentLocale
+            val language = if (detected in multilingualLocales) detected.language else current.mLocale.language
+            enabledHexDecoder(language)
+        } else null
 
-        var dictResult: SuggestedWords? = null
-        var lmResult: ArrayList<SuggestedWordInfo>? = null
-        if(predictionInputValues != null) {
+        // This method returns null for us if LM is disabled
+        val predictionInputValues = if (hexDecoder == null) {
+            languageModelFacilitator.makePredictionInputValues(inputStyle)
+        } else null
+
+        val lmResultHolder = predictionInputValues?.let {
             // This runs asynchronously
-            val lmResultHolder = AsyncResultHolder<ArrayList<SuggestedWordInfo>?>("LMSuggest")
+            val holder = AsyncResultHolder<ArrayList<SuggestedWordInfo>?>("LMSuggest")
             lmUpdateJob?.cancel()
             lmUpdateJob = helper.lifecycleScope.launch(languageModelFacilitator.languageModelScope) {
-                val result = languageModelFacilitator.getLanguageModelSuggestions(predictionInputValues)
-                lmResultHolder.set(result ?: arrayListOf())
+                val result = languageModelFacilitator.getLanguageModelSuggestions(it)
+                holder.set(result ?: arrayListOf())
             }
-
-            // This runs synchronously
-            inputLogic.getSuggestedWords(
-                settings.current,
-                helper.keyboardSwitcher.keyboard ?: return,
-                helper.keyboardShiftMode,
-                inputStyle,
-                sequenceNumber
-            ) { suggestedWords -> dictResult = suggestedWords }
-
-            // Wait for LM to report result
-            lmResult = lmResultHolder.get(null, 350L)
-            if(lmResult == null) languageModelFacilitator.reportTimeout()
-        } else {
-            inputLogic.getSuggestedWords(
-                settings.current,
-                helper.keyboardSwitcher.keyboard ?: return,
-                helper.keyboardShiftMode,
-                inputStyle,
-                sequenceNumber
-            ) { suggestedWords -> dictResult = suggestedWords }
+            holder
         }
+
+        var dictResult: SuggestedWords? = null
+        inputLogic.getSuggestedWords(
+            current, keyboard, helper.keyboardShiftMode, inputStyle, sequenceNumber
+        ) { suggestedWords, ngram ->
+            dictResult = if (hexDecoder != null) {
+                val alternate = (listOf(current.mLocale) + multilingualLocales)
+                    .map { it.language }
+                    .firstOrNull { it != hexDecoder.model.language && hexAutocorrectSetting(it) != null }
+                    ?.let(::enabledHexDecoder)
+                hexAutocorrect.apply(
+                    hexDecoder, alternate, composer, keyboard, ngram,
+                    current.mBlockPotentiallyOffensive, suggestedWords
+                )
+            } else suggestedWords
+        }
+
+        val lmResult = lmResultHolder?.get(null, 350L)
+        if (lmResultHolder != null && lmResult == null) languageModelFacilitator.reportTimeout()
 
         when {
             !lmResult.isNullOrEmpty() && dictResult != null && predictionInputValues != null -> {
@@ -529,6 +545,9 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
         }
     }
 
+    private fun enabledHexDecoder(language: String) = hexAutocorrectSetting(language)
+        ?.takeIf { context.getSetting(it) }
+        ?.let { hexAutocorrect.decoder(language) }
 
     private var sequenceId = AtomicInteger(0)
     private val sequenceIdCompleted = AtomicInteger(0)

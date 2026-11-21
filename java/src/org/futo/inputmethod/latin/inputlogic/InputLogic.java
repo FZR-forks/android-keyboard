@@ -40,7 +40,6 @@ import org.futo.inputmethod.latin.LastComposedWord;
 import org.futo.inputmethod.latin.NgramContext;
 import org.futo.inputmethod.latin.RichInputConnection;
 import org.futo.inputmethod.latin.Suggest;
-import org.futo.inputmethod.latin.Suggest.OnGetSuggestedWordsCallback;
 import org.futo.inputmethod.latin.SuggestedWords;
 import org.futo.inputmethod.latin.SuggestedWords.SuggestedWordInfo;
 import org.futo.inputmethod.latin.WordComposer;
@@ -67,6 +66,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
 import java.util.regex.Pattern;
 
 import javax.annotation.Nonnull;
@@ -2862,23 +2862,20 @@ public final class InputLogic {
 
     public void getSuggestedWords(final SettingsValues settingsValues,
             final Keyboard keyboard, final int keyboardShiftMode, final int inputStyle,
-            final int sequenceNumber, final OnGetSuggestedWordsCallback callback) {
+            final int sequenceNumber, final BiConsumer<SuggestedWords, NgramContext> callback) {
         mWordComposer.adviseCapitalizedModeBeforeFetchingSuggestions(
                 getActualCapsMode(settingsValues, keyboardShiftMode));
-        mSuggest.getSuggestedWords(mWordComposer,
-                getNgramContextFromNthPreviousWordForSuggestion(
-                        settingsValues.mSpacingAndPunctuations,
-                        // Get the word on which we should search the bigrams. If we are composing
-                        // a word, it's whatever is *before* the half-committed word in the buffer,
-                        // hence 2; if we aren't, we should just skip whitespace if any, so 1.
-                        mWordComposer.isComposingWord() ? 2 : 1),
+        // While composing, skip the unfinished word to get the context for bigrams.
+        final NgramContext ngram = getNgramContextFromNthPreviousWordForSuggestion(
+                settingsValues.mSpacingAndPunctuations, mWordComposer.isComposingWord() ? 2 : 1);
+        mSuggest.getSuggestedWords(mWordComposer, ngram,
                 keyboard,
                 new SettingsValuesForSuggestion(
                     settingsValues.mBlockPotentiallyOffensive,
                     settingsValues.mTransformerPredictionEnabled
                 ),
                 settingsValues.mAutoCorrectionEnabledPerUserSettings,
-                inputStyle, sequenceNumber, callback);
+                inputStyle, sequenceNumber, words -> callback.accept(words, ngram));
     }
 
     /**
