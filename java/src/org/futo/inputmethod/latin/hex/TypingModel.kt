@@ -93,16 +93,16 @@ internal class TypingModel private constructor(private val data: ByteBuffer, val
     }
     val neverSuggest = NeverSuggest(this, list)
     fun context(spelling: String) = neverSuggest.context(spelling, index(spelling))
-    // Public, newline-delimited ASCII spellings outside the word-pair model. Find a
+    // NUL-terminated ASCII spellings outside the word-pair model. Find a
     // literal in the mapped bytes without allocating a heap dictionary or calling an IME service.
     fun validLiteral(word: String): Boolean {
         val data = validWords ?: return false
         var lo = 0; var hi = data.limit()
         while (lo < hi) {
             var at = (lo + hi) ushr 1
-            while (at > lo && data.get(at - 1) != 10.toByte()) at--
+            while (at > lo && data.get(at - 1) != 0.toByte()) at--
             var end = at
-            while (data.get(end) != 10.toByte()) end++
+            while (data.get(end) != 0.toByte()) end++
             var cmp = 0
             for (i in 0 until minOf(word.length, end - at)) {
                 cmp = data.get(at + i).toInt() - word[i].code
@@ -134,7 +134,7 @@ internal class TypingModel private constructor(private val data: ByteBuffer, val
         }
         private fun open(model: ByteBuffer, language: String, valid: ByteBuffer?, list: Reader): TypingModel {
             require(model.limit() >= 36 && model.getInt(20) in 1..250)
-            require(valid == null || valid.get(valid.limit() - 1) == 10.toByte())
+            require(valid == null || valid.get(valid.limit() - 1) == 0.toByte())
             return TypingModel(model, language, valid, list)
         }
         fun asset(assets: AssetManager, language: String): TypingModel {

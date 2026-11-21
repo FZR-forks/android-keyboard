@@ -11,8 +11,9 @@ suggestion strip and correction handling. See [Hex-MIT.txt](Hex-MIT.txt).
   spellings, selected word pairs and quantized probabilities. [Dataset](https://storage.googleapis.com/books/ngrams/books/datasetsv3.html) · [CC BY 3.0](google-books-cc-by-3.0.txt)
 - `en.valid` contains lowercased and sorted English spellings outside the
   frequency model, from SCOWL 2020.12.07 through size 70, by Kevin Atkinson
-  and contributors. The file is copied verbatim and memory-mapped in the APK.
-  SHA-256: `d2b7c27ddd7da701cab7bffd1468f51061bf569d7dc81bfcaacf29beeea0d6cf`.
+  and contributors. The backport preserves the entries and replaces newlines
+  with NUL record terminators for the memory-mapped binary asset.
+  Original Hex SHA-256: `d2b7c27ddd7da701cab7bffd1468f51061bf569d7dc81bfcaacf29beeea0d6cf`.
   [Source](https://wordlist.aspell.net/) · [Permissions and notices](scowl.txt)
 - `never-suggest.tsv` is Hex's adaptation of the List of Dirty, Naughty,
   Obscene, and Otherwise Bad Words, © 2012–2020 Shutterstock, Inc. and
