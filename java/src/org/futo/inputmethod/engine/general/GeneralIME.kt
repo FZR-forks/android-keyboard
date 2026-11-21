@@ -40,7 +40,6 @@ import org.futo.inputmethod.latin.WordComposer
 import org.futo.inputmethod.latin.common.Constants
 import org.futo.inputmethod.latin.common.InputPointers
 import org.futo.inputmethod.latin.hex.HexAutocorrect
-import org.futo.inputmethod.latin.hex.hexAutocorrectSetting
 import org.futo.inputmethod.latin.inputlogic.InputLogic
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.suggestions.SuggestionStripViewAccessor
@@ -114,7 +113,7 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
     )
 
     private val settings = Settings.getInstance()
-    private val hexAutocorrect = HexAutocorrect(context.assets)
+    private val hexAutocorrect = HexAutocorrect(context)
 
     private val suggestionBlacklist = SuggestionBlacklist(
         settings,
@@ -470,19 +469,13 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
         val current = settings.current
         val keyboard = helper.keyboardSwitcher.keyboard ?: return
         val composer = inputLogic.mWordComposer
-        val multilingualLocales = if (current.mInputAttributes.mLocaleOverride == null) {
-            current.mMultilingualLocales
-        } else emptyList()
-        val hexDecoder = if (inputStyle == SuggestedWords.INPUT_STYLE_TYPING && composer.isComposingWord
+        val hexRequest = if (inputStyle == SuggestedWords.INPUT_STYLE_TYPING && composer.isComposingWord
             && !composer.isBatchMode && current.mAutoCorrectionEnabledPerUserSettings
         ) {
-            val detected = dictionaryFacilitator.mostConfidentLocale
-            val language = if (detected in multilingualLocales) detected.language else current.mLocale.language
-            enabledHexDecoder(language)
+            hexAutocorrect.prepare(composer, keyboard, current, dictionaryFacilitator.mostConfidentLocale)
         } else null
 
-        // This method returns null for us if LM is disabled
-        val predictionInputValues = if (hexDecoder == null) {
+        val predictionInputValues = if (hexRequest == null) {
             languageModelFacilitator.makePredictionInputValues(inputStyle)
         } else null
 
@@ -501,14 +494,9 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
         inputLogic.getSuggestedWords(
             current, keyboard, helper.keyboardShiftMode, inputStyle, sequenceNumber
         ) { suggestedWords, ngram ->
-            dictResult = if (hexDecoder != null) {
-                val alternate = (listOf(current.mLocale) + multilingualLocales)
-                    .map { it.language }
-                    .firstOrNull { it != hexDecoder.model.language && hexAutocorrectSetting(it) != null }
-                    ?.let(::enabledHexDecoder)
+            dictResult = if (hexRequest != null) {
                 hexAutocorrect.apply(
-                    hexDecoder, alternate, composer, keyboard, ngram,
-                    current.mBlockPotentiallyOffensive, suggestedWords
+                    hexRequest, ngram, current.mBlockPotentiallyOffensive, suggestedWords
                 )
             } else suggestedWords
         }
@@ -545,9 +533,6 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
         }
     }
 
-    private fun enabledHexDecoder(language: String) = hexAutocorrectSetting(language)
-        ?.takeIf { context.getSetting(it) }
-        ?.let { hexAutocorrect.decoder(language) }
 
     private var sequenceId = AtomicInteger(0)
     private val sequenceIdCompleted = AtomicInteger(0)

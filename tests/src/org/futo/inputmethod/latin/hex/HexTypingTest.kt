@@ -5,6 +5,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -22,15 +23,14 @@ class HexTypingTest {
         val mistap = KeyPoint(k.x * 0.6 + o.x * 0.4, k.y * 0.6 + o.y * 0.4)
 
         fun replacement(secondTap: KeyPoint) = TypingWord(
-            decoder, "tk", listOf(
-                decoder.score(grid, t.x, t.y),
-                decoder.score(grid, secondTap.x, secondTap.y),
-            ), "need", suggestSwearWords = false
+            decoder, "tk", grid, listOf(t, secondTap), "need", suggestSwearWords = false
         ).replacement()
 
         assertEquals("to", replacement(mistap))
         assertNotEquals("to", replacement(k))
         assertNull(word(decoder, grid, "tbh", "").replacement())
+        assertEquals(-1, decoder.model.index("aaliyah"))
+        assertTrue(decoder.model.validLiteral("aaliyah"))
     }
 
     @Test
@@ -53,10 +53,7 @@ class HexTypingTest {
     }
 
     private fun word(decoder: SpatialDecoder, grid: KeyGrid, text: String, previous: String): TypingWord {
-        val taps = text.map { letter ->
-            val point = grid.centres.getValue(letter)
-            decoder.score(grid, point.x, point.y)
-        }
-        return TypingWord(decoder, text, taps, previous, suggestSwearWords = false)
+        val taps = text.map(grid.centres::getValue)
+        return TypingWord(decoder, text, grid, taps, previous, suggestSwearWords = false)
     }
 }

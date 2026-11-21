@@ -5,43 +5,44 @@ package org.futo.inputmethod.latin.hex
 internal class TypingWord(
     private val decoder: SpatialDecoder,
     private val token: String,
-    private val taps: List<SpatialDecoder.Tap>,
+    private val grid: KeyGrid,
+    private val points: List<KeyPoint>,
     previousWord: String,
     private val suggestSwearWords: Boolean,
 ) {
     private val model = decoder.model
     private val previous = model.context(previousWord.lowercase())
+    private val lower = token.lowercase()
+    private val literal = model.index(lower)
+    private val knownSpelling = literal >= 0 || model.validLiteral(lower)
+    private val innerCaps = token.drop(1).any { it.isUpperCase() }
+    private val isShorthand = model.language == "en" && lower in shorthand
+    private val blockedToken = blocked(lower)
     val isKnownLiteral: Boolean
-        get() = protected() || blocked(token) || model.index(token.lowercase()) >= 0
-            || model.validLiteral(token.lowercase())
-    private val decision by lazy {
-        decoder.decide(token.lowercase(), taps, previous, suggestSwearWords)
-    }
-    private fun blocked(spelling: String) = model.neverSuggest.blocks(spelling.lowercase(), suggestSwearWords, previous)
-    private fun protected() = token.drop(1).any { it.isUpperCase() } ||
-        (model.language == "en" && token.lowercase() in shorthand)
-    private fun cased(s: String) = if (token.firstOrNull()?.isUpperCase() == true) s.replaceFirstChar { it.uppercase() } else s
+        get() = innerCaps || isShorthand || blockedToken || knownSpelling
+
+    private fun blocked(spelling: String) = model.neverSuggest.blocks(spelling, suggestSwearWords, previous)
+    private fun cased(s: String) = if (token.first().isUpperCase()) s.replaceFirstChar { it.uppercase() } else s
+
     fun replacement(): String? {
-        if (token.isEmpty() || taps.size != token.length || blocked(token)) return null
-        val lower = token.lowercase()
-        val allCaps = token.length >= 2 && token.all { it.isUpperCase() }
-        if (token.drop(1).any { it.isUpperCase() } && !allCaps) return null
-        if (model.language == "en") {
-            if (lower in shorthand) return null
-            englishFixes[lower]?.takeUnless(::blocked)?.let { return if (allCaps) {
-                if (token.length >= 3) it.uppercase() else null
-            } else cased(it) }
+        if (token.length !in 1..MAX_LENGTH || points.size != token.length || blockedToken || isShorthand) {
+            return null
         }
-        return if (allCaps) null else decision.replace?.let(::cased)
-    }
-    fun suggestions(): List<String> {
-        if (token.length !in 1..MAX_LENGTH) return emptyList()
-        val options = LinkedHashMap<String, Int>()
-        for (w in model.completions(token.lowercase(), suggestSwearWords, previous)) options[model.text(w)] = model.frequencyCost(w)
-        if (options.size < 3 && token.length >= 2 && !protected()) for (r in decision.readings)
-            options.putIfAbsent(r.text, r.frequency)
-        return options.entries.sortedWith(compareBy<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
-            .take(3).map { cased(it.key) }
+        val allCaps = token.length >= 2 && token.all { it.isUpperCase() }
+        if (innerCaps && !allCaps) return null
+        if (model.language == "en") {
+            englishFixes[lower]?.takeUnless { blocked(it.lowercase()) }?.let {
+                return when {
+                    !allCaps -> cased(it)
+                    token.length >= 3 -> it.uppercase()
+                    else -> null
+                }
+            }
+        }
+        if (allCaps || lower.length != token.length) return null
+        val taps = points.map { decoder.score(grid, it.x, it.y) }
+        return decoder.replacement(lower, taps, previous, suggestSwearWords, literal, knownSpelling)
+            ?.let(::cased)
     }
     companion object {
         const val MAX_LENGTH = 32

@@ -3,8 +3,7 @@ package org.futo.inputmethod.latin.hex
 
 import java.text.Normalizer
 
-/** Positions are all in the same layout coordinates. The IME supplies measured key centres;
- * the replay supplies the original test layout, not a guessed phone screen size. */
+/** Key centres and taps are in the same keyboard coordinates. */
 internal data class KeyPoint(val x: Double, val y: Double)
 internal class KeyGrid(val centres: Map<Char, KeyPoint>, val pitchX: Double, val pitchY: Double) {
     val bottomY = centres.values.maxOf { it.y }
@@ -18,8 +17,6 @@ internal class KeyGrid(val centres: Map<Char, KeyPoint>, val pitchX: Double, val
 }
 internal class SpatialDecoder(val model: TypingModel) {
     class Tap(val cost: DoubleArray, val choices: IntArray, val belowLetters: Boolean, val missedSpaceCost: Double)
-    data class Reading(val text: String, val cost: Double, val frequency: Int)
-    data class Decision(val replace: String?, val readings: List<Reading>)
     // Google Books English has richer word pairs; these are the shared iOS R1 weights.
     private val lmWeight = if (model.language == "en") 1.5 else 1.25
     fun score(grid: KeyGrid, x: Double, y: Double): Tap {
@@ -86,23 +83,35 @@ internal class SpatialDecoder(val model: TypingModel) {
         return found.map { Found(it.key, it.value) }
     }
 
-    fun decide(typed: String, taps: List<Tap>, previous: Int, swears: Boolean): Decision {
-        val none = Decision(null, emptyList())
-        if (typed.length !in 2..32 || taps.size != typed.length || model.neverSuggest.blocks(typed, swears, previous) ||
-            typed.any { model.code(it) == 0 || it == '\'' }) return none
-        val literal = model.index(typed)
-        val knownLiteral = literal >= 0 || model.validLiteral(typed)
+    fun replacement(
+        typed: String,
+        taps: List<Tap>,
+        previous: Int,
+        swears: Boolean,
+        literal: Int,
+        knownLiteral: Boolean,
+    ): String? {
+        if (typed.length < 2 || typed.any { model.code(it) == 0 || it == '\'' }) return null
         var cost = lmWeight * when {
             literal >= 0 -> model.languageCost(previous, literal)
             knownLiteral -> 15.0
             else -> 22.0
         }
         for (i in taps.indices) cost += taps[i].cost[model.code(typed[i])]
-        if (!cost.isFinite()) return none
-        val readings = ArrayList<Reading>()
+        if (!cost.isFinite()) return null
+        var bestText: String? = null
+        var bestCost = Double.POSITIVE_INFINITY
+        fun consider(score: Double, text: () -> String) {
+            if (score > bestCost) return
+            val candidate = text()
+            if (score < bestCost || bestText?.let { candidate < it } != false) {
+                bestCost = score
+                bestText = candidate
+            }
+        }
         // iOS applies the language score only to the five best spatial readings.
         for ((w, spatial) in search(taps, 0, taps.size, 1, swears, previous).sortedWith(spatialOrder).take(5)) if (w != literal)
-            readings.add(Reading(model.text(w), spatial + lmWeight * model.languageCost(previous, w), model.frequencyCost(w)))
+            consider(spatial + lmWeight * model.languageCost(previous, w)) { model.text(w) }
         if (taps.size >= 3) {
             fun alone(f: Found) = model.length(f.word) > 1 || model.frequencyCost(f.word) < 56
             fun half(a: Int, b: Int, prev: Int) = search(taps, a, b, 0, swears, prev).sortedWith(spatialOrder)
@@ -116,16 +125,16 @@ internal class SpatialDecoder(val model: TypingModel) {
                     for (l in left) for (r in right) {
                         if (model.neverSuggest.blocksFollowing(r.word, swears, l.word)) continue
                         val lm = model.languageCost(previous, l.word) + model.languageCost(l.word, r.word)
-                        readings.add(Reading(model.text(l.word) + " " + model.text(r.word), l.cost + r.cost + taps[k].missedSpaceCost + lmWeight * lm,
-                            model.frequencyCost(l.word) + model.frequencyCost(r.word)))
+                        consider(l.cost + r.cost + taps[k].missedSpaceCost + lmWeight * lm) {
+                            model.text(l.word) + " " + model.text(r.word)
+                        }
                     }
                 }
             }
         }
-        readings.sortWith(compareBy<Reading> { it.cost }.thenBy { it.text })
-        val best = readings.firstOrNull() ?: return none
-        val margin = if (!knownLiteral || foldAccents(best.text) == foldAccents(typed)) 2.0 else 7.0
-        return Decision(if (cost - best.cost >= margin) best.text else null, readings.asSequence().filter { it.cost < cost }.distinctBy { it.text }.take(3).toList())
+        val best = bestText ?: return null
+        val margin = if (!knownLiteral || foldAccents(best) == foldAccents(typed)) 2.0 else 7.0
+        return best.takeIf { cost - bestCost >= margin }
     }
     private companion object {
         val spatialOrder = compareBy<Found> { it.cost }.thenBy { it.word }

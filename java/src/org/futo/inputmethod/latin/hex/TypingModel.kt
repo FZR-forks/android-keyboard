@@ -93,15 +93,6 @@ internal class TypingModel private constructor(private val data: ByteBuffer, val
     }
     val neverSuggest = NeverSuggest(this, list)
     fun context(spelling: String) = neverSuggest.context(spelling, index(spelling))
-    private fun range(prefix: String): Long {
-        var a = 0; var b = words
-        for (i in prefix.indices) {
-            val c = code(prefix[i]); if (c == 0) return 0
-            a = bound(a, b, i, c); b = bound(a, b, i, c + 1)
-            if (a == b) return 0
-        }
-        return (a.toLong() shl 32) or b.toLong()
-    }
     // Public, newline-delimited ASCII spellings outside the word-pair model. Find a
     // literal in the mapped bytes without allocating a heap dictionary or calling an IME service.
     fun validLiteral(word: String): Boolean {
@@ -124,33 +115,17 @@ internal class TypingModel private constructor(private val data: ByteBuffer, val
         return false
     }
     fun index(word: String): Int {
-        val r = range(word); val a = (r ushr 32).toInt()
-        return if (r != 0L && length(a) == word.length) a else -1
-    }
-    // Common prefixes get reused on consecutive words. No corpus-sized heap trie.
-    private data class Prefix(val text: String, val swears: Boolean, val context: Int)
-    private val prefixCache = object : LinkedHashMap<Prefix, IntArray>(96, 0.75f, true) {
-        override fun removeEldestEntry(eldest: Map.Entry<Prefix, IntArray>?) = size > 96
-    }
-    fun completions(prefix: String, swears: Boolean, previous: Int): IntArray {
-        val key = Prefix(prefix, swears, neverSuggest.restrictedContext(previous))
-        return prefixCache.getOrPut(key) { rankCompletions(key) }
-    }
-    private fun rankCompletions(key: Prefix): IntArray {
-        val r = range(key.text)
-        val best = IntArray(3) { -1 }
-        for (word in (r ushr 32).toInt() until r.toInt()) {
-            if (neverSuggest.blocks(word, key.swears, key.context)) continue
-            val f = frequencyCost(word)
-            for (i in best.indices) {
-                if (best[i] == -1 || f < frequencyCost(best[i])) {
-                    for (j in best.lastIndex downTo i+1) best[j] = best[j-1]
-                    best[i] = word; break
-                }
-            }
+        var lo = 0
+        var hi = words
+        for (depth in word.indices) {
+            val code = code(word[depth])
+            if (code == 0) return -1
+            val range = child(lo, hi, depth, code)
+            if (range == 0L) return -1
+            lo = (range ushr 32).toInt()
+            hi = range.toInt()
         }
-        val count = best.indexOf(-1)
-        return if (count < 0) best else best.copyOf(count)
+        return if (length(lo) == word.length) lo else -1
     }
     companion object {
         private fun mapped(channel: FileChannel, offset: Long, size: Long): ByteBuffer {
